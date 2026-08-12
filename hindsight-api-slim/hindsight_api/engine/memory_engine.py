@@ -15818,7 +15818,9 @@ class MemoryEngine(MemoryEngineInterface):
             task_type: Task type for the task payload (e.g., 'consolidation', 'batch_retain')
             task_payload: Additional task payload fields (operation_id and bank_id are added automatically)
             result_metadata: Optional metadata to store with the operation record
-            dedupe_by_bank: If True, skip creating a new task if one is already pending for this bank+operation_type
+            dedupe_by_bank: If True, skip creating a new task if one is already queued for this
+                bank+operation_type. Which statuses count as "queued" depends on
+                dedupe_by_bank_includes_processing below.
             dedupe_by_bank_includes_processing: Widen dedupe_by_bank to also match a
                 *processing* job. Only correct for operations whose job drains its
                 own backlog to empty before finishing (see submit_async_graph_maintenance);
@@ -15908,7 +15910,7 @@ class MemoryEngine(MemoryEngineInterface):
                     )
                     pending = await conn.fetch(
                         f"""
-                        SELECT operation_id, task_payload FROM {fq_table("async_operations")}
+                        SELECT operation_id, task_payload, status FROM {fq_table("async_operations")}
                         WHERE bank_id = $1 AND operation_type = $2 AND {status_filter}
                         """,
                         bank_id,
@@ -15925,7 +15927,7 @@ class MemoryEngine(MemoryEngineInterface):
                         row_dict = json.loads(row_payload) if isinstance(row_payload, str) else (row_payload or {})
                         if row_dict.get("observation_scopes") is None:
                             logger.debug(
-                                f"{operation_type} task already pending for bank_id={bank_id}, "
+                                f"{operation_type} task already {row['status']} for bank_id={bank_id}, "
                                 f"skipping duplicate (existing operation_id={row['operation_id']})"
                             )
                             return {
@@ -16483,8 +16485,9 @@ class MemoryEngine(MemoryEngineInterface):
         Idempotent: short-circuits with ``no_work=True`` when the queue is empty
         for this bank, so unconditional callers (e.g. every retain that may or
         may not have triggered a document upsert) don't generate empty worker
-        tasks. Deduplicates by bank when an existing pending job is already
-        scheduled.
+        tasks. Deduplicates by bank against a job that is already pending *or*
+        already running — graph maintenance drains its own queue to empty, so a
+        job that is mid-flight still covers work queued after it started.
 
         Args:
             force_sweep: Skip the empty-queue short-circuit. The job's later
