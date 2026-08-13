@@ -8727,7 +8727,12 @@ class MemoryEngine(MemoryEngineInterface):
                     # combined with the field edit. Mirrors update_document's tag-write split:
                     # a direct column write for the SQL-backed store, MemoryPatch for others.
                     if tags is not None and live2:
-                        if store.writes_memory_rows_in_sql_for(bank_id):
+                        # Bare attribute, not the per-bank writes_memory_rows_in_sql_for(bank_id)
+                        # method (added by #3388, after v0.9.0) — this keeps the patch applying
+                        # cleanly to both the currently-deployed release and current upstream/main.
+                        # Equivalent for any single-backend deployment; only loses precision for a
+                        # store that mixes SQL and non-SQL banks in one process.
+                        if store.writes_memory_rows_in_sql:
                             await conn.execute(
                                 f"UPDATE {fq_table('memory_units')} SET tags = $3, updated_at = now() "
                                 f"WHERE id = $1 AND bank_id = $2",
