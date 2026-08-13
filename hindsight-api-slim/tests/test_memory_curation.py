@@ -512,6 +512,114 @@ class TestEdit:
 
 
 # ---------------------------------------------------------------------------
+# Tags (independent of the field edit, no re-embed/consolidation cascade)
+# ---------------------------------------------------------------------------
+
+
+class TestTags:
+    @pytest.mark.asyncio
+    async def test_tags_only_skips_reembed_and_consolidation(
+        self, memory: MemoryEngine, request_context: RequestContext
+    ):
+        bank_id = f"test-curation-tagsonly-{uuid.uuid4().hex[:8]}"
+        await _ensure_bank(memory, bank_id, request_context)
+
+        pool = await memory._get_pool()
+        async with pool.acquire() as conn:
+            m1 = await _insert_memory(conn, memory, bank_id, "A fact worth tagging.")
+            consolidated_before = await _consolidated_at(conn, m1)
+        assert consolidated_before is not None
+
+        with (
+            patch.object(memory, "submit_async_consolidation", new=AsyncMock()) as consolidation_mock,
+            patch.object(memory, "submit_async_graph_maintenance", new=AsyncMock()) as graph_mock,
+        ):
+            result = await memory.update_memory_unit(
+                bank_id, str(m1), tags=["smoke-test", "needs-review"], request_context=request_context
+            )
+
+        assert result["tags"] == ["smoke-test", "needs-review"]
+        assert result["edited_at"] is None, "tags-only is not a content edit"
+        consolidation_mock.assert_not_awaited()
+        graph_mock.assert_not_awaited()
+        async with pool.acquire() as conn:
+            row = dict(await conn.fetchrow("SELECT tags, consolidated_at FROM memory_units WHERE id = $1", m1))
+            assert row["tags"] == ["smoke-test", "needs-review"]
+            assert row["consolidated_at"] == consolidated_before, "tags-only must not trigger re-consolidation"
+
+        await memory.delete_bank(bank_id, request_context=request_context)
+
+    @pytest.mark.asyncio
+    async def test_edit_combines_text_and_tags(self, memory: MemoryEngine, request_context: RequestContext):
+        bank_id = f"test-curation-tagscombo-{uuid.uuid4().hex[:8]}"
+        await _ensure_bank(memory, bank_id, request_context)
+
+        pool = await memory._get_pool()
+        async with pool.acquire() as conn:
+            m1 = await _insert_memory(conn, memory, bank_id, "Original text.")
+
+        with (
+            patch.object(memory, "submit_async_consolidation", new=AsyncMock()) as consolidation_mock,
+            patch.object(memory, "submit_async_graph_maintenance", new=AsyncMock()) as graph_mock,
+        ):
+            result = await memory.update_memory_unit(
+                bank_id, str(m1), text="Corrected text.", tags=["combined-edit"], request_context=request_context
+            )
+
+        assert result["text"] == "Corrected text."
+        assert result["tags"] == ["combined-edit"]
+        assert result["edited_at"] is not None, "combining tags with a field edit is still a content edit"
+        consolidation_mock.assert_awaited_once()
+        graph_mock.assert_awaited_once()
+        async with pool.acquire() as conn:
+            row = dict(await conn.fetchrow("SELECT text, tags, consolidated_at FROM memory_units WHERE id = $1", m1))
+            assert row["text"] == "Corrected text."
+            assert row["tags"] == ["combined-edit"]
+            assert row["consolidated_at"] is None, "the field edit still re-consolidates, tags along for the ride"
+
+        await memory.delete_bank(bank_id, request_context=request_context)
+
+    @pytest.mark.asyncio
+    async def test_tags_clear_with_empty_list(self, memory: MemoryEngine, request_context: RequestContext):
+        bank_id = f"test-curation-tagsclear-{uuid.uuid4().hex[:8]}"
+        await _ensure_bank(memory, bank_id, request_context)
+
+        pool = await memory._get_pool()
+        async with pool.acquire() as conn:
+            m1 = await _insert_memory(conn, memory, bank_id, "A tagged fact.")
+
+        with (
+            patch.object(memory, "submit_async_consolidation", new=AsyncMock()),
+            patch.object(memory, "submit_async_graph_maintenance", new=AsyncMock()),
+        ):
+            await memory.update_memory_unit(bank_id, str(m1), tags=["temp"], request_context=request_context)
+            result = await memory.update_memory_unit(bank_id, str(m1), tags=[], request_context=request_context)
+
+        assert result["tags"] == [], "[] clears all tags, distinct from omitting the field"
+
+        await memory.delete_bank(bank_id, request_context=request_context)
+
+    @pytest.mark.asyncio
+    async def test_cannot_tag_invalidated_memory(self, memory: MemoryEngine, request_context: RequestContext):
+        bank_id = f"test-curation-taginv-{uuid.uuid4().hex[:8]}"
+        await _ensure_bank(memory, bank_id, request_context)
+
+        pool = await memory._get_pool()
+        async with pool.acquire() as conn:
+            m1 = await _insert_memory(conn, memory, bank_id, "Stale fact.")
+
+        with (
+            patch.object(memory, "submit_async_consolidation", new=AsyncMock()),
+            patch.object(memory, "submit_async_graph_maintenance", new=AsyncMock()),
+        ):
+            await memory.update_memory_unit(bank_id, str(m1), state="invalidated", request_context=request_context)
+            with pytest.raises(ValueError, match="revert"):
+                await memory.update_memory_unit(bank_id, str(m1), tags=["should-fail"], request_context=request_context)
+
+        await memory.delete_bank(bank_id, request_context=request_context)
+
+
+# ---------------------------------------------------------------------------
 # Graph relinking after curation (#2889)
 # ---------------------------------------------------------------------------
 
