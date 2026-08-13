@@ -8338,6 +8338,7 @@ class MemoryEngine(MemoryEngineInterface):
         occurred_end: str | None = None,
         new_fact_type: str | None = None,
         entities: list[str] | None = None,
+        tags: list[str] | None = None,
         state: str | None = None,
         reason: str | None = None,
         request_context: "RequestContext",
@@ -8361,6 +8362,12 @@ class MemoryEngine(MemoryEngineInterface):
           now-stale cooccurrence rows, are reclaimed by the graph-maintenance
           sweep that this edit submits (entity edges live in ``unit_entities``,
           not ``memory_links``, so there is nothing to relink directly).
+        - **Tags** (``tags``, when not None): replaces the unit's tag list wholesale
+          (``[]`` clears it). Handled independently of the edit fields above — tags
+          feed neither the embedding, ``memory_links``, nor graph maintenance, so a
+          tags change is a direct column write in Phase 2 below, with no Phase-1
+          embed/resolve work and no consolidation/graph resubmit. Can be combined
+          with the other edit fields in one call; each is applied independently.
         - **Invalidate** (``state='invalidated'``): move the row to the archive
           (cascade-pruning its links/entity associations and re-deriving dependent
           observations). The archive is cold storage, so the embedding is dropped
@@ -8485,9 +8492,12 @@ class MemoryEngine(MemoryEngineInterface):
             doing_edit = any(v is not None for v in (text, context, occurred_start, occurred_end, new_fact_type)) or (
                 new_entities is not None
             )
+            # Tags share the "live rows only" rule with the other edit fields, but are
+            # handled as an independent Phase-2 write (see the docstring's Tags note) —
+            # checked here rather than folded into doing_edit above.
+            if (doing_edit or tags is not None) and not live:
+                raise ValueError("Cannot edit an invalidated memory; revert it to 'valid' first.")
             if doing_edit:
-                if not live:
-                    raise ValueError("Cannot edit an invalidated memory; revert it to 'valid' first.")
                 new_text = text if text is not None else live.text
                 new_context = (context or None) if context is not None else live.context
                 new_fact = new_fact_type if new_fact_type is not None else live.fact_type
@@ -8710,6 +8720,27 @@ class MemoryEngine(MemoryEngineInterface):
                         need_consolidation = True
                         need_graph = True
                         edit_applied = True
+
+                    # --- Tags: independent of the field edit above (see docstring's Tags
+                    # note) — no embedding/link/graph consequences, so no need_consolidation
+                    # / need_graph, and no Phase-1 work regardless of whether it ran alone or
+                    # combined with the field edit. Mirrors update_document's tag-write split:
+                    # a direct column write for the SQL-backed store, MemoryPatch for others.
+                    if tags is not None and live2:
+                        if store.writes_memory_rows_in_sql_for(bank_id):
+                            await conn.execute(
+                                f"UPDATE {fq_table('memory_units')} SET tags = $3, updated_at = now() "
+                                f"WHERE id = $1 AND bank_id = $2",
+                                str(memory_uuid),
+                                bank_id,
+                                tags,
+                            )
+                        else:
+                            from .memories import MemoryPatch
+
+                            await store.update_memories(
+                                bank_id, [MemoryPatch(unit_id=str(memory_uuid), tags=list(tags))], txn=_curation_txn
+                            )
 
                     # --- Invalidate: move live → archive ---
                     if do_invalidate and live2:

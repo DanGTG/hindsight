@@ -1798,6 +1798,11 @@ class UpdateMemoryRequest(BaseModel):
         description="Replace the fact's entities. Names are resolved/find-or-created "
         "the same way retain does; '[]' detaches all entities. Omit to leave unchanged.",
     )
+    tags: list[str] | None = Field(
+        default=None,
+        description="Replace the fact's classification tags (used for recall/reflect "
+        "scoping). '[]' clears all tags. Omit to leave unchanged.",
+    )
     state: str | None = Field(
         default=None,
         description="Curation state: 'invalidated' to soft-retire the memory "
@@ -1820,6 +1825,7 @@ class UpdateMemoryRequest(BaseModel):
                 self.occurred_end,
                 self.fact_type,
                 self.entities,
+                self.tags,
                 self.state,
             )
         )
@@ -4441,6 +4447,7 @@ def _register_routes(app: FastAPI):
                 occurred_end=occurred_end,
                 new_fact_type=request.fact_type,
                 entities=request.entities,
+                tags=request.tags,
                 state=request.state,
                 reason=request.reason,
                 request_context=request_context,
