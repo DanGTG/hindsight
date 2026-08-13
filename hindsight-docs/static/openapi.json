@@ -15166,6 +15166,21 @@
             "title": "Entities",
             "description": "Replace the fact's entities. Names are resolved/find-or-created the same way retain does; '[]' detaches all entities. Omit to leave unchanged."
           },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "Replace the fact's classification tags (used for recall/reflect scoping). '[]' clears all tags. Omit to leave unchanged."
+          },
           "state": {
             "anyOf": [
               {
