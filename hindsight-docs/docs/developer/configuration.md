@@ -2074,6 +2074,7 @@ The Control Plane is the web UI for managing memory banks.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HINDSIGHT_CP_DATAPLANE_API_URL` | URL of the API service | `http://localhost:8888` |
+| `HINDSIGHT_CP_RESTART_RECOVERY_TIMEOUT_SECONDS` | Maximum time the Control Plane waits for a new Hindsight API process after requesting restart. | `120` |
 | `HINDSIGHT_CP_DATAPLANE_API_KEY` | Bearer token the Control Plane sends as `Authorization: Bearer <key>` on every request to the API service. Required when the API service is auth-protected; omit for a public API. | *(none — no `Authorization` header sent)* |
 | `HINDSIGHT_CP_ACCESS_KEY` | Access key to protect the Control Plane UI. When set, users must enter this key to log in. | *(none — auth disabled)* |
 | `HINDSIGHT_CP_MAX_UPLOAD_SIZE` | Maximum size of a single file-upload request the Control Plane accepts before truncating it. Accepts a size string (`100mb`, `1gb`) or a number of bytes. Raise this to upload files larger than the default, and keep it in line with the API's `HINDSIGHT_API_FILE_CONVERSION_MAX_BATCH_SIZE_MB`. | `100mb` |
@@ -2153,6 +2154,8 @@ Configuration fields are categorized for security:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `HINDSIGHT_API_ENABLE_BANK_CONFIG_API` | Enable per-bank config API | `true` |
+| `HINDSIGHT_API_ENABLE_SERVER_RESTART` | Enable `POST /v1/default/admin/restart`. Gracefully terminates only the Hindsight API process and requires an external supervisor to restart it. Unavailable with multiple API workers. | `false` |
+| `HINDSIGHT_API_SERVER_RESTART_DELAY_SECONDS` | Delay after the restart response is sent before graceful termination begins. | `1.0` |
 | `HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH` | Enable the per-bank LLM connectivity probe (`POST /v1/default/banks/{bank_id}/health/llm`). It makes a real provider call, so it is **off by default** — enable it to expose the endpoint. Returns status only — never the provider/model/endpoint. | `false` |
 | `HINDSIGHT_API_ENABLE_DRY_RUN_EXTRACT` | Enable the dry-run extraction preview endpoint (`POST /v1/default/banks/{bank_id}/memories/dry-run-extract`). Runs extraction only — makes a real LLM call but stores nothing. Set to `false` to remove the endpoint (returns `404`). | `true` |
 | `HINDSIGHT_API_DEFAULT_BANK_TEMPLATE` | Bank template manifest (JSON) applied automatically to every newly-created bank. See below. | _(unset)_ |

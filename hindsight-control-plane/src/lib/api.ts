@@ -322,7 +322,11 @@ export interface BankTemplateImportResponse {
 }
 
 export class ControlPlaneClient {
-  private async fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+  private async fetchApi<T>(
+    path: string,
+    options?: RequestInit,
+    behavior?: { suppressErrorToast?: boolean }
+  ): Promise<T> {
     try {
       const response = await fetch(withBasePath(path), {
         ...options,
@@ -372,7 +376,9 @@ export class ControlPlaneClient {
         const description = describeErrorDetails(errorDetails) || errorMessage;
         const status = response.status;
 
-        if (isClientError) {
+        if (behavior?.suppressErrorToast) {
+          // The caller owns a persistent status toast (for example, restart recovery).
+        } else if (isClientError) {
           // Client errors (4xx) - validation, bad request, etc. - show as warning
           toast.warning("Client Error", {
             description,
@@ -402,7 +408,7 @@ export class ControlPlaneClient {
       return response.json();
     } catch (error) {
       // If it's not a response error (network error, etc.), show toast
-      if (!(error as any).status) {
+      if (!(error as any).status && !behavior?.suppressErrorToast) {
         toast.error("Network Error", {
           description: error instanceof Error ? error.message : "Failed to connect to server",
           duration: 5000,
@@ -977,6 +983,25 @@ export class ControlPlaneClient {
       retried_count: number;
     }>(bankApi(bankId, "/consolidation-recover"), {
       method: "POST",
+    });
+  }
+
+  async restartServer() {
+    return this.fetchApi<{
+      accepted: boolean;
+      instance_id: string;
+      delay_seconds: number;
+      recovery_timeout_seconds: number;
+    }>("/api/restart", { method: "POST" }, { suppressErrorToast: true });
+  }
+
+  async getRestartStatus(previousInstanceId: string) {
+    return this.fetchApi<{
+      reachable: boolean;
+      ready: boolean;
+      instance_id?: string;
+    }>(`/api/restart?previousInstanceId=${encodeURIComponent(previousInstanceId)}`, undefined, {
+      suppressErrorToast: true,
     });
   }
 
@@ -1626,11 +1651,13 @@ export class ControlPlaneClient {
   async getVersion() {
     return this.fetchApi<{
       api_version: string;
+      instance_id: string;
       features: {
         observations: boolean;
         mcp: boolean;
         worker: boolean;
         bank_config_api: boolean;
+        server_restart: boolean;
         file_upload_api: boolean;
         document_export_api: boolean;
         document_import_api: boolean;

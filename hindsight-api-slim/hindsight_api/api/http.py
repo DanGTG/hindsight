@@ -8,6 +8,7 @@ the FastAPI application with all API endpoints.
 import asyncio
 import json
 import logging
+import os
 import re
 import uuid
 from collections.abc import Awaitable
@@ -54,9 +55,10 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from hindsight_api import MemoryEngine
-from hindsight_api.config import RETAIN_EXTRACTION_MODES
+from hindsight_api.config import DEFAULT_WORKERS, ENV_WORKERS, RETAIN_EXTRACTION_MODES
 from hindsight_api.config_resolver import BankConfigPersistenceConflictError
 from hindsight_api.engine.retain.entity_labels import LabelGroup, _migrate_label_group
+from hindsight_api.restart import RestartController
 
 
 def _migrate_entity_labels_input(value: Any) -> Any:
@@ -3408,6 +3410,7 @@ class FeaturesInfo(BaseModel):
     worker: bool = Field(description="Whether the background worker is enabled")
     bank_config_api: bool = Field(description="Whether per-bank configuration API is enabled")
     bank_llm_health: bool = Field(description="Whether the per-bank LLM connectivity probe is enabled")
+    server_restart: bool = Field(description="Whether supervised server restart is enabled")
     file_upload_api: bool = Field(description="Whether file upload/conversion API is enabled")
     document_export_api: bool = Field(description="Whether the document export endpoint is enabled")
     document_import_api: bool = Field(description="Whether the document import endpoint is enabled")
@@ -3439,7 +3442,16 @@ class VersionResponse(BaseModel):
     )
 
     api_version: str = Field(description="API version string")
+    instance_id: str = Field(description="Opaque identifier unique to this API process")
     features: FeaturesInfo = Field(description="Enabled feature flags")
+
+
+class RestartResponse(BaseModel):
+    """Response returned before this API process begins graceful shutdown."""
+
+    accepted: bool = Field(description="Whether a new restart was scheduled")
+    instance_id: str = Field(description="Identifier of the API process being restarted")
+    delay_seconds: float = Field(description="Delay before graceful termination begins")
 
 
 # =========================================================================
@@ -3828,6 +3840,11 @@ def create_app(
     # This is required for mounted sub-applications where lifespan may not fire
     app.state.memory = memory
     app.state.audit_logger = memory.audit_logger
+    configured_workers = int(os.getenv(ENV_WORKERS, str(DEFAULT_WORKERS)))
+    app.state.restart_controller = RestartController(
+        enabled=config.enable_server_restart and configured_workers == 1,
+        delay_seconds=config.server_restart_delay_seconds,
+    )
 
     app.add_middleware(GZipMiddleware, minimum_size=1024)
 
@@ -4067,6 +4084,7 @@ def _register_routes(app: FastAPI):
     async def _readiness_response() -> JSONResponse:
         """Shared body of /health and /health/ready: 200 if healthy, 503 if not."""
         health = await app.state.memory.health_check()
+        health["instance_id"] = app.state.restart_controller.instance_id
         status_code = 200 if health.get("status") == "healthy" else 503
         return JSONResponse(content=health, status_code=status_code)
 
@@ -4146,14 +4164,17 @@ def _register_routes(app: FastAPI):
         from hindsight_api.config import _get_raw_config
 
         config = _get_raw_config()
+        restart_controller = app.state.restart_controller
         return VersionResponse(
             api_version=__version__,
+            instance_id=restart_controller.instance_id,
             features=FeaturesInfo(
                 observations=config.enable_observations,
                 mcp=config.mcp_enabled,
                 worker=config.worker_enabled,
                 bank_config_api=config.enable_bank_config_api,
                 bank_llm_health=config.enable_bank_llm_health,
+                server_restart=restart_controller.enabled,
                 file_upload_api=config.enable_file_upload_api,
                 document_export_api=config.enable_document_export_api,
                 document_import_api=config.enable_document_import_api,
@@ -4161,6 +4182,33 @@ def _register_routes(app: FastAPI):
                 llm_trace=config.llm_trace_enabled,
                 store_document_text=config.store_document_text,
             ),
+        )
+
+    @app.post(
+        "/v1/default/admin/restart",
+        response_model=RestartResponse,
+        status_code=202,
+        summary="Restart the Hindsight server",
+        description="Schedules graceful termination of this API process. An external supervisor must restart it.",
+        tags=["Administration"],
+        operation_id="restart_server",
+    )
+    async def restart_server_endpoint(
+        request_context: RequestContext = Depends(get_request_context),
+    ) -> RestartResponse:
+        restart_controller = app.state.restart_controller
+        if not restart_controller.enabled:
+            raise HTTPException(
+                status_code=404,
+                detail="Server restart is disabled. Set HINDSIGHT_API_ENABLE_SERVER_RESTART=true to enable.",
+            )
+
+        await app.state.memory._authenticate_tenant(request_context)
+        accepted = restart_controller.schedule_restart()
+        return RestartResponse(
+            accepted=accepted,
+            instance_id=restart_controller.instance_id,
+            delay_seconds=restart_controller.delay_seconds,
         )
 
     @app.get(

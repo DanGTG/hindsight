@@ -227,6 +227,9 @@ import type {
   ResetBankConfigData,
   ResetBankConfigErrors,
   ResetBankConfigResponses,
+  RestartServerData,
+  RestartServerErrors,
+  RestartServerResponses,
   RetainMemoriesData,
   RetainMemoriesErrors,
   RetainMemoriesResponses,
@@ -337,6 +340,19 @@ export const getVersion = <ThrowOnError extends boolean = false>(
 ) =>
   (options?.client ?? client).get<GetVersionResponses, unknown, ThrowOnError>({
     url: "/version",
+    ...options,
+  });
+
+/**
+ * Restart the Hindsight server
+ *
+ * Schedules graceful termination of this API process. An external supervisor must restart it.
+ */
+export const restartServer = <ThrowOnError extends boolean = false>(
+  options?: Options<RestartServerData, ThrowOnError>
+) =>
+  (options?.client ?? client).post<RestartServerResponses, RestartServerErrors, ThrowOnError>({
+    url: "/v1/default/admin/restart",
     ...options,
   });
 

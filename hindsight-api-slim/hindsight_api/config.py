@@ -546,6 +546,8 @@ ENV_MCP_STATELESS = "HINDSIGHT_API_MCP_STATELESS"
 ENV_MCP_INSTRUCTIONS = "HINDSIGHT_API_MCP_INSTRUCTIONS"
 ENV_ENABLE_BANK_CONFIG_API = "HINDSIGHT_API_ENABLE_BANK_CONFIG_API"
 ENV_ENABLE_BANK_LLM_HEALTH = "HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH"
+ENV_ENABLE_SERVER_RESTART = "HINDSIGHT_API_ENABLE_SERVER_RESTART"
+ENV_SERVER_RESTART_DELAY_SECONDS = "HINDSIGHT_API_SERVER_RESTART_DELAY_SECONDS"
 ENV_ENABLE_DRY_RUN_EXTRACT = "HINDSIGHT_API_ENABLE_DRY_RUN_EXTRACT"
 ENV_DEFAULT_BANK_TEMPLATE = "HINDSIGHT_API_DEFAULT_BANK_TEMPLATE"
 ENV_GRAPH_RETRIEVER = "HINDSIGHT_API_GRAPH_RETRIEVER"
@@ -1154,6 +1156,10 @@ DEFAULT_ENABLE_DRY_RUN_EXTRACT = True
 # The per-bank LLM connectivity probe makes a real provider call, so it's OFF by
 # default (cost/abuse concerns) and must be explicitly enabled to expose the endpoint.
 DEFAULT_ENABLE_BANK_LLM_HEALTH = False
+# Server restart is deliberately opt-in because it terminates the API process and
+# relies on an external supervisor (systemd, Docker, Kubernetes) to bring it back.
+DEFAULT_ENABLE_SERVER_RESTART = False
+DEFAULT_SERVER_RESTART_DELAY_SECONDS = 1.0
 DEFAULT_DEFAULT_BANK_TEMPLATE: dict | None = None  # BankTemplateManifest dict applied to newly-created banks
 DEFAULT_GRAPH_RETRIEVER = "link_expansion"
 DEFAULT_RECALL_MAX_CONCURRENT = 32  # Max concurrent recall operations per worker
@@ -2363,6 +2369,8 @@ class HindsightConfig:
     mcp_instructions: str | None  # Additional instructions appended to retain/recall MCP tool descriptions
     enable_bank_config_api: bool
     enable_bank_llm_health: bool
+    enable_server_restart: bool
+    server_restart_delay_seconds: float
     enable_dry_run_extract: bool
     # Default bank template (static, server-level only). When set, the manifest is applied
     # to every newly-created bank, overriding the env/config defaults for any fields it sets.
@@ -3534,6 +3542,12 @@ class HindsightConfig:
             == "true",
             enable_bank_config_api=os.getenv(ENV_ENABLE_BANK_CONFIG_API, str(DEFAULT_ENABLE_BANK_CONFIG_API)).lower()
             == "true",
+            enable_server_restart=os.getenv(ENV_ENABLE_SERVER_RESTART, str(DEFAULT_ENABLE_SERVER_RESTART)).lower()
+            == "true",
+            server_restart_delay_seconds=max(
+                0.0,
+                float(os.getenv(ENV_SERVER_RESTART_DELAY_SECONDS, str(DEFAULT_SERVER_RESTART_DELAY_SECONDS))),
+            ),
             enable_dry_run_extract=os.getenv(ENV_ENABLE_DRY_RUN_EXTRACT, str(DEFAULT_ENABLE_DRY_RUN_EXTRACT)).lower()
             == "true",
             default_bank_template=_parse_default_bank_template(os.getenv(ENV_DEFAULT_BANK_TEMPLATE)),

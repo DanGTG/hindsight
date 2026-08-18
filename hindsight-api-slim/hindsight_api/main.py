@@ -277,6 +277,10 @@ def main():
         tenant_extension.set_context(extension_context)
         logging.info("Extension context set on tenant extension")
 
+    # Keep the effective CLI worker count visible to the app factory. The
+    # process-scoped restart endpoint must stay disabled for multi-worker servers.
+    os.environ[ENV_WORKERS] = str(args.workers)
+
     # Create FastAPI app
     app = create_app(
         memory=_memory,

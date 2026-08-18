@@ -2055,6 +2055,12 @@ export type FeaturesInfo = {
    */
   bank_llm_health: boolean;
   /**
+   * Server Restart
+   *
+   * Whether supervised server restart is enabled
+   */
+  server_restart: boolean;
+  /**
    * File Upload Api
    *
    * Whether file upload/conversion API is enabled
@@ -4556,6 +4562,32 @@ export type ReprocessDocumentResponse = {
 };
 
 /**
+ * RestartResponse
+ *
+ * Response returned before this API process begins graceful shutdown.
+ */
+export type RestartResponse = {
+  /**
+   * Accepted
+   *
+   * Whether a new restart was scheduled
+   */
+  accepted: boolean;
+  /**
+   * Instance Id
+   *
+   * Identifier of the API process being restarted
+   */
+  instance_id: string;
+  /**
+   * Delay Seconds
+   *
+   * Delay before graceful termination begins
+   */
+  delay_seconds: number;
+};
+
+/**
  * RetainRequest
  *
  * Request model for retain endpoint.
@@ -5108,6 +5140,12 @@ export type VersionResponse = {
    */
   api_version: string;
   /**
+   * Instance Id
+   *
+   * Opaque identifier unique to this API process
+   */
+  instance_id: string;
+  /**
    * Enabled feature flags
    */
   features: FeaturesInfo;
@@ -5339,6 +5377,37 @@ export type GetVersionResponses = {
 };
 
 export type GetVersionResponse = GetVersionResponses[keyof GetVersionResponses];
+
+export type RestartServerData = {
+  body?: never;
+  headers?: {
+    /**
+     * Authorization
+     */
+    authorization?: string | null;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/default/admin/restart";
+};
+
+export type RestartServerErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError;
+};
+
+export type RestartServerError = RestartServerErrors[keyof RestartServerErrors];
+
+export type RestartServerResponses = {
+  /**
+   * Successful Response
+   */
+  202: RestartResponse;
+};
+
+export type RestartServerResponse = RestartServerResponses[keyof RestartServerResponses];
 
 export type MetricsEndpointMetricsGetData = {
   body?: never;

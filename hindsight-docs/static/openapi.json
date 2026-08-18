@@ -97,6 +97,56 @@
         }
       }
     },
+    "/v1/default/admin/restart": {
+      "post": {
+        "tags": [
+          "Administration"
+        ],
+        "summary": "Restart the Hindsight server",
+        "description": "Schedules graceful termination of this API process. An external supervisor must restart it.",
+        "operationId": "restart_server",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestartResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/metrics": {
       "get": {
         "tags": [
@@ -10133,6 +10183,11 @@
             "title": "Bank Llm Health",
             "description": "Whether the per-bank LLM connectivity probe is enabled"
           },
+          "server_restart": {
+            "type": "boolean",
+            "title": "Server Restart",
+            "description": "Whether supervised server restart is enabled"
+          },
           "file_upload_api": {
             "type": "boolean",
             "title": "File Upload Api",
@@ -10171,6 +10226,7 @@
           "worker",
           "bank_config_api",
           "bank_llm_health",
+          "server_restart",
           "file_upload_api",
           "document_export_api",
           "document_import_api",
@@ -14494,6 +14550,33 @@
         "title": "ReprocessDocumentResponse",
         "description": "Response model for reprocess document endpoint."
       },
+      "RestartResponse": {
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted",
+            "description": "Whether a new restart was scheduled"
+          },
+          "instance_id": {
+            "type": "string",
+            "title": "Instance Id",
+            "description": "Identifier of the API process being restarted"
+          },
+          "delay_seconds": {
+            "type": "number",
+            "title": "Delay Seconds",
+            "description": "Delay before graceful termination begins"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted",
+          "instance_id",
+          "delay_seconds"
+        ],
+        "title": "RestartResponse",
+        "description": "Response returned before this API process begins graceful shutdown."
+      },
       "RetainRequest": {
         "properties": {
           "items": {
@@ -15463,6 +15546,11 @@
             "title": "Api Version",
             "description": "API version string"
           },
+          "instance_id": {
+            "type": "string",
+            "title": "Instance Id",
+            "description": "Opaque identifier unique to this API process"
+          },
           "features": {
             "$ref": "#/components/schemas/FeaturesInfo",
             "description": "Enabled feature flags"
@@ -15471,6 +15559,7 @@
         "type": "object",
         "required": [
           "api_version",
+          "instance_id",
           "features"
         ],
         "title": "VersionResponse",

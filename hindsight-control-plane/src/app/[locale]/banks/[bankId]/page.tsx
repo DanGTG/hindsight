@@ -54,6 +54,7 @@ import {
   RotateCcw,
   Activity,
   FlaskConical,
+  Power,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { LlmHealthDialog } from "@/components/llm-health-dialog";
@@ -94,6 +95,7 @@ export default function BankPage() {
   const bankConfigEnabled = features?.bank_config_api ?? false;
   const llmTraceEnabled = features?.llm_trace ?? false;
   const llmHealthEnabled = features?.bank_llm_health ?? false;
+  const serverRestartEnabled = features?.server_restart ?? false;
 
   // `audit_log_enabled` and `enable_observations` are hierarchical
   // (env -> tenant -> bank): a bank can opt in even when the deployment default
@@ -142,6 +144,8 @@ export default function BankPage() {
   const [isRecoveringConsolidation, setIsRecoveringConsolidation] = useState(false);
   const [showResetConfigDialog, setShowResetConfigDialog] = useState(false);
   const [isResettingConfig, setIsResettingConfig] = useState(false);
+  const [showRestartDialog, setShowRestartDialog] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
 
   const handleTabChange = (tab: NavItem) => {
     if (!bankId) return;
@@ -234,6 +238,47 @@ export default function BankPage() {
       // Error toast is shown automatically by the API client interceptor
     } finally {
       setIsRecoveringConsolidation(false);
+    }
+  };
+
+  const handleRestartServer = async () => {
+    const toastId = "hindsight-server-restart";
+    setIsRestarting(true);
+    toast.info(t("restartRequested"), { id: toastId, duration: Infinity });
+
+    try {
+      const restart = await client.restartServer();
+      setShowRestartDialog(false);
+      toast.info(t("restartShuttingDown"), { id: toastId, duration: Infinity });
+
+      const deadline = Date.now() + restart.recovery_timeout_seconds * 1000;
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.max(250, restart.delay_seconds * 1000))
+      );
+      let waitingForRecovery = false;
+
+      while (Date.now() < deadline) {
+        const status = await client.getRestartStatus(restart.instance_id);
+        if (status.ready) {
+          toast.success(t("restartRecovered"), { id: toastId, duration: 5000 });
+          return;
+        }
+        if (!status.reachable && !waitingForRecovery) {
+          waitingForRecovery = true;
+          toast.info(t("restartWaiting"), { id: toastId, duration: Infinity });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      throw new Error(t("restartTimedOut"));
+    } catch (error) {
+      toast.error(t("restartFailed"), {
+        id: toastId,
+        description: error instanceof Error ? error.message : t("restartFailedDescription"),
+        duration: 8000,
+      });
+    } finally {
+      setIsRestarting(false);
     }
   };
 
@@ -334,6 +379,22 @@ export default function BankPage() {
                           )}
                           {isRecoveringConsolidation ? t("recovering") : t("recoverConsolidation")}
                           {!observationsEnabled && (
+                            <span className="ml-auto text-xs text-muted-foreground">Off</span>
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setShowRestartDialog(true)}
+                          disabled={isRestarting || !serverRestartEnabled}
+                          className="text-amber-600 dark:text-amber-400 focus:text-amber-700 dark:focus:text-amber-300"
+                          title={!serverRestartEnabled ? t("restartDisabled") : undefined}
+                        >
+                          {isRestarting ? (
+                            <Spinner size="sm" className="mr-2" />
+                          ) : (
+                            <Power className="w-4 h-4 mr-2" />
+                          )}
+                          {t("restartHindsight")}
+                          {!serverRestartEnabled && (
                             <span className="ml-auto text-xs text-muted-foreground">Off</span>
                           )}
                         </DropdownMenuItem>
@@ -822,6 +883,43 @@ export default function BankPage() {
                 <>
                   <RotateCcw className="w-4 h-4 mr-2" />
                   {t("resetConfiguration")}
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Restart Hindsight Confirmation Dialog */}
+      <AlertDialog open={showRestartDialog} onOpenChange={setShowRestartDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("restartHindsightTitle")}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>{t("restartHindsightPrompt")}</p>
+                <p className="text-amber-600 dark:text-amber-400 font-medium">
+                  {t("restartHindsightWarning")}
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRestarting}>{tCommon("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRestartServer}
+              disabled={isRestarting}
+              className="bg-amber-500 text-white hover:bg-amber-600"
+            >
+              {isRestarting ? (
+                <>
+                  <Spinner size="sm" className="mr-2" />
+                  {t("restartRequested")}
+                </>
+              ) : (
+                <>
+                  <Power className="w-4 h-4 mr-2" />
+                  {t("restartHindsight")}
                 </>
               )}
             </AlertDialogAction>
