@@ -54,7 +54,7 @@ import {
   RotateCcw,
   Activity,
   FlaskConical,
-  Power,
+  RotateCw,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { LlmHealthDialog } from "@/components/llm-health-dialog";
@@ -391,7 +391,7 @@ export default function BankPage() {
                           {isRestarting ? (
                             <Spinner size="sm" className="mr-2" />
                           ) : (
-                            <Power className="w-4 h-4 mr-2" />
+                            <RotateCw className="w-4 h-4 mr-2" />
                           )}
                           {t("restartHindsight")}
                           {!serverRestartEnabled && (
@@ -918,7 +918,7 @@ export default function BankPage() {
                 </>
               ) : (
                 <>
-                  <Power className="w-4 h-4 mr-2" />
+                  <RotateCw className="w-4 h-4 mr-2" />
                   {t("restartHindsight")}
                 </>
               )}
